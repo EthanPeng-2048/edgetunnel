@@ -29,7 +29,7 @@
 
 - **代码组织**：上游 `_worker.js` 单文件（约 6700 行）→ `src/` 下 TypeScript 多文件（strict 模式）。
 - **页面本地化**：登录 / 管理 / noADMIN / noKV 页面由运行时 `fetch` 远程站点改为本地 Static Assets（`assets/pages/`，随 Worker 一起部署）；Google Fonts 外链已移除（系统字体栈），第三方 IP 查询 API 保留。
-- **部署方式**：`wrangler.toml` 声明 `assets` 绑定且 `run_worker_first = true`（路由与认证先经 Worker），因此**必须** `wrangler deploy`；上游的「粘贴 `_worker.js`」「Pages 上传 zip」方式不再适用。
+- **部署方式**：`wrangler.toml` 声明 `assets` 绑定且 `run_worker_first = true`（路由与认证先经 Worker），推荐 `wrangler deploy`；也可 `npm run build` 打出单文件 `dist/_worker.js` 粘贴到 Workers 控制台测试（页面 HTML 内嵌兜底，无 ASSETS 绑定也可用）。
 - **对照物归档**：上游单文件与其 25 个行为向量测试归档在 `archive/`（`_worker.js` + `test_rename.mjs`），迁移期用于逐行为对照，`node archive/test_rename.mjs` 可随时回归。
 
 ---
@@ -48,6 +48,7 @@ npm install
 npm run dev      # wrangler dev → http://127.0.0.1:8787
 npm run check    # tsc --noEmit 类型检查
 npm test         # vitest 全量单测
+npm run build    # 打包单文件 dist/_worker.js（控制台粘贴测试用）
 ```
 
 > 本地以 http 提供服务，而 Worker 的 http→https 301 会把非传输层请求重定向到 `https://127.0.0.1:8787`（本地无 TLS 监听）。
@@ -60,8 +61,10 @@ npm test         # vitest 全量单测
    ```bash
    npm install
    ```
-2. 绑定 KV：在 Cloudflare 控制台创建 KV 命名空间，绑定变量名必须为 **KV**；
-   将命名空间 id 填入 `wrangler.toml` 的 `[[kv_namespaces]]`（取消该段注释）。
+2. 绑定 KV：`wrangler.toml` 已声明 `binding = "KV"`（不写 id，仓库不存命名空间 id——与上游
+   「控制台手动绑定、变量名 KV」的做法同源）。首次部署 wrangler 会自动创建命名空间；
+   也可先在控制台「设置 → 绑定 → 添加 KV 命名空间」手动绑好（上游同款步骤，变量名 **KV**），
+   部署时会沿用。命名空间 id 在控制台「绑定」页可见，如需锁定可写入 `wrangler.toml` 的 `[[kv_namespaces]]`。
 3. 配置管理密码 **ADMIN**：推荐部署后在 Workers 仪表盘「设置 → 变量」中添加
    （`keep_vars = true`，`wrangler deploy` 不会清除仪表盘已有变量）；
    也可写入 `wrangler.toml` 的 `[vars]`，但请勿把密码提交进仓库。
@@ -72,6 +75,16 @@ npm test         # vitest 全量单测
    wrangler 会打包 `src/index.ts` 并上传 `assets/` 静态页面。
 5. 在控制台「触发器 → 添加自定义域」绑定你的域名，等待证书生效。
 6. 访问 `https://你的域名/admin`，输入 ADMIN 密码即可登录后台。
+
+### 单文件上传测试（可选）
+
+```bash
+npm run build   # → dist/_worker.js（约 1.4MB，页面 HTML 已内嵌）
+```
+
+1. Workers 仪表盘创建 Worker → 编辑代码 → 粘贴 `dist/_worker.js` 全文部署。
+2. 无 KV 时在「设置 → 变量」添加 `UUID`（否则所有请求落 noKV 提示页）与 `ADMIN`（管理密码；不设置则落 noADMIN 提示页）。
+3. `/login` `/admin` `/fast-sub` `/sub` 均可用；正式使用仍推荐「部署（wrangler deploy）」流程绑定 KV 与静态资源。
 
 ---
 

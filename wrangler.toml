@@ -11,6 +11,9 @@ directory = "./assets"
 binding = "ASSETS"
 run_worker_first = true
 
-#[[kv_namespaces]]
-#binding = "KV"			#KV绑定名默认不可修改
-#id = ""				#KV数据库id
+# KV 绑定：只声明 binding、不写 id（wrangler 自动预配，官方 GitHub 部署流做法）。
+# 首次部署自动创建命名空间；id 不进仓库，在控制台「绑定」页可见（与上游同款：仓库无 id、资源归 dashboard 管）。
+# 也可先在控制台手动添加 KV 绑定（变量名 KV，上游同款步骤），wrangler 部署时沿用同名绑定。
+# 绑定名 KV 是兼容红线，勿改。
+[[kv_namespaces]]
+binding = "KV"

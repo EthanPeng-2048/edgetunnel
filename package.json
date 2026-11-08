@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "build": "esbuild src/index.standalone.ts --bundle --format=esm --target=es2022 --loader:.html=text --outfile=dist/_worker.js",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
