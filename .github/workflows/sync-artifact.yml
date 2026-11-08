@@ -1,0 +1,57 @@
+# main 每次更新 → 类型检查/测试 → 打包混淆产物 _worker.js → 推送到 xtunnel-workers 仓库
+# CF Pages 连接 xtunnel-workers（构建命令留空）即自动部署。需仓库 secret：XTUNNEL_WORKERS_TOKEN
+#（fine-grained PAT，仅授权 xtunnel-workers 仓库的 Contents: Read and write）。
+name: sync-artifact
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-artifact-main
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查与测试
+        run: |
+          npm run check
+          npm test
+
+      - name: 打包混淆产物
+        run: npm run build
+
+      - name: 检出产物仓库
+        uses: actions/checkout@v4
+        with:
+          repository: EthanPeng-2048/xtunnel-workers
+          token: ${{ secrets.XTUNNEL_WORKERS_TOKEN }}
+          path: workers
+
+      - name: 提交产物到 xtunnel-workers
+        run: |
+          cp dist/_worker.js workers/_worker.js
+          cd workers
+          git add _worker.js
+          if git diff --cached --quiet; then
+            echo "产物无变化，跳过提交"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "artifact: ${{ github.sha }}"
+          git push
