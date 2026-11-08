@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>配置错误</title>
+    <noscript></noscript>
+    <style>
+        /* ============================================================
+           设计令牌 —— 与 admin/index.html 完全对齐
+           ============================================================ */
+        :root {
+            /* 页面与卡片 */
+            --admin-bg-base: #f8fafc;
+            --bg-primary: #ffffff;
+            --card-glass: rgba(255, 255, 255, 0.9);
+            --bg-secondary: rgba(255, 255, 255, 0.95);
+            /* 文本 */
+            --text-primary: #1f2937;
+            --text-secondary: #666;
+            --text-muted: #9ca3af;
+            /* 边框与输入 */
+            --border-color: #e5e7eb;
+            --border-light: rgba(255, 255, 255, 0.1);
+            --input-bg: #ffffff;
+            --input-border: #e5e7eb;
+            /* 遮罩 */
+            --overlay-bg: rgba(255, 255, 255, 0.66);
+            /* 品牌渐变（两模式一致） */
+            --accent-a: #faab41;
+            --accent-b: #f6821f;
+            --accent-grad: linear-gradient(135deg, #faab41 0, #f6821f 100%);
+            /* 焦点：亮=橙（与 admin 一致） */
+            --focus: #faab41;
+            /* 错误 */
+            --banner-warn-bg: #fef2f2;
+            --banner-warn-border: #dc2626;
+            --banner-warn-text: #991b1b;
+            /* 代码 chip */
+            --chip-bg: rgba(246, 130, 31, 0.1);
+            --chip-text: #c2410c;
+            /* 阴影 */
+            --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+            --icon-glow: 0 10px 30px rgba(246, 130, 31, 0.35)
+        }
+
+        html.dark-mode {
+            --admin-bg-base: #070b12;
+            --bg-primary: #1a1a1a;
+            --card-glass: rgba(26, 26, 26, 0.92);
+            --bg-secondary: #0f0d0a;
+            --text-primary: #e5e5e5;
+            --text-secondary: #a0a0a0;
+            --text-muted: #737373;
+            --border-color: #333333;
+            --border-light: rgba(255, 255, 255, 0.1);
+            --input-bg: #2a2a2a;
+            --input-border: #444444;
+            --overlay-bg: rgba(7, 11, 18, 0.78);
+            /* 焦点：夜=紫（与 admin html.dark-mode 一致） */
+            --focus: #7c3aed;
+            --banner-warn-bg: rgba(220, 38, 38, 0.12);
+            --banner-warn-border: #ef4444;
+            --banner-warn-text: #fca5a5;
+            --chip-bg: rgba(250, 171, 65, 0.12);
+            --chip-text: #fbbf24;
+            --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+            --icon-glow: 0 10px 30px rgba(246, 130, 31, 0.22)
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--admin-bg-base);
+            color: var(--text-primary);
+            overflow: hidden;
+            transition: background 0.35s ease, color 0.35s ease;
+            -webkit-font-smoothing: antialiased
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+            border-radius: 4px
+        }
+
+        /* 通用动画 */
+        @keyframes blurOverlayAppear {
+            0% {
+                opacity: 0;
+                -webkit-backdrop-filter: blur(0px);
+                backdrop-filter: blur(0px);
+            }
+
+            100% {
+                opacity: 1;
+                -webkit-backdrop-filter: blur(12px);
+                backdrop-filter: blur(12px);
+            }
+        }
+
+        @keyframes containerAppear {
+            0% {
+                opacity: 0;
+                transform: translateY(30px) scale(0.9)
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1)
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0
+            }
+
+            to {
+                opacity: 1
+            }
+        }
+
+        @keyframes gradientShift {
+            0% {
+                background-position: 0 50%
+            }
+
+            50% {
+                background-position: 100% 50%
+            }
+
+            100% {
+                background-position: 0 50%
+            }
+        }
+
+        /* 背景和遮罩层 */
+        #background-iframe {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            z-index: -3 !important
+        }
+
+        #blur-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--overlay-bg);
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+            z-index: -2 !important;
+            animation: blurOverlayAppear 1.5s ease-out forwards .3s;
+            pointer-events: none;
+            opacity: 0
+        }
+
+        /* 通用容器包装器 */
+        .page-wrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1 !important;
+            padding: 20px;
+            overflow-y: auto
+        }
+
+        /* 通用卡片容器 */
+        .card-container {
+            background: var(--card-glass);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            padding: 50px 40px;
+            border-radius: 24px;
+            box-shadow: var(--shadow-card);
+            width: 100%;
+            animation: containerAppear 1s ease-out .8s backwards;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.35s ease
+        }
+
+        .card-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #faab41 0, #f6821f 50%, #faab41 100%);
+            background-size: 200% 100%;
+            animation: gradientShift 3s ease infinite
+        }
+
+        /* 页面标题和图标 */
+        .page-header {
+            margin-bottom: 32px;
+            text-align: center
+        }
+
+        .page-icon {
+            width: 70px;
+            height: 70px;
+            margin: 0 auto 20px;
+            background: var(--accent-grad);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--icon-glow);
+            animation: fadeIn .8s ease-out 1s backwards
+        }
+
+        /* 红色数据库图标 */
+        .page-icon.danger {
+            background: linear-gradient(135deg, #f87171 0, #dc2626 100%);
+            box-shadow: 0 10px 30px rgba(220, 38, 38, 0.35)
+        }
+
+        .page-icon svg {
+            width: 36px;
+            height: 36px
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0 0 16px;
+            line-height: 1.2;
+            letter-spacing: -0.5px
+        }
+
+        html:not(.dark-mode) .page-title {
+            background: var(--accent-grad);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        /* 表单样式 */
+        /* 按钮样式 */
+        .btn {
+            padding: 16px 20px;
+            border: 0;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .3s ease;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            appearance: none;
+            letter-spacing: .5px;
+            position: relative;
+            overflow: hidden
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #faab41 0, #f6821f 100%);
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(246, 130, 31, 0.35)
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left .5s ease
+        }
+
+        .btn-primary:hover::before {
+            left: 100%
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(246, 130, 31, 0.45)
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(246, 130, 31, 0.35)
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none
+        }
+
+        /* 页脚提示 */
+        .footer-hint {
+            margin-top: 28px;
+            font-size: 13px;
+            color: var(--text-muted);
+            animation: fadeIn 1s ease-out 1.5s backwards;
+            text-align: center
+        }
+
+        .footer-hint a {
+            color: var(--accent-b);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color .3s ease
+        }
+
+        .footer-hint a:hover {
+            color: var(--accent-a);
+            text-decoration: underline
+        }
+
+        /* 卡片内主题切换 FAB（与 admin 的 theme-toggle 同位） */
+        .theme-fab {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 30;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+            transition: all 0.25s ease
+        }
+
+        .theme-fab:hover {
+            transform: translateY(-2px) rotate(12deg)
+        }
+
+        .theme-fab svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round
+        }
+
+        html.dark-mode .ico-sun {
+            display: none
+        }
+
+        html:not(.dark-mode) .ico-moon {
+            display: none
+        }
+
+        /* 模态框 */
+        /* 响应式设计 - 平板 */
+        @media(max-width:768px) {
+            .page-wrapper {
+                padding: 20px 16px;
+                padding-top: 20px;
+                padding-bottom: 20px;
+                justify-content: flex-start;
+                align-items: center
+            }
+
+            .card-container {
+                padding: 40px 28px;
+                border-radius: 20px;
+                max-width: 100%;
+                margin-top: auto;
+                margin-bottom: auto
+            }
+
+            .page-icon {
+                width: 60px;
+                height: 60px;
+                border-radius: 16px;
+                margin-bottom: 16px
+            }
+
+            .page-form {
+                margin-top: 28px
+            }
+
+            .form-group {
+                margin-bottom: 20px
+            }
+
+            .form-group input {
+                padding: 14px;
+                font-size: 16px;
+                border-radius: 10px
+            }
+
+            .form-group input.with-icon {
+                padding-left: 44px
+            }
+
+            .input-icon {
+                left: 14px;
+                width: 18px;
+                height: 18px
+            }
+
+            .btn {
+                padding: 15px 20px;
+                font-size: 15px;
+                border-radius: 10px
+            }
+
+            .footer-hint {
+                margin-top: 24px;
+                font-size: 12px
+            }
+        }
+
+        /* 响应式设计 - 手机 */
+        @media(max-width:480px) {
+            .page-wrapper {
+                padding: 12px;
+                justify-content: flex-start;
+                align-items: center
+            }
+
+            .card-container {
+                padding: 35px 24px;
+                border-radius: 18px;
+                margin-top: auto;
+                margin-bottom: auto
+            }
+
+            .page-icon {
+                width: 55px;
+                height: 55px;
+                border-radius: 14px
+            }
+
+            .page-icon svg {
+                width: 28px;
+                height: 28px
+            }
+
+            .page-title {
+                font-size: 23px
+            }
+
+            .theme-fab {
+                width: 36px;
+                height: 36px;
+                top: 10px;
+                right: 10px
+            }
+        }
+
+        /* 响应式设计 - 横屏 */
+        @media(max-height:600px) and (orientation:landscape) {
+            .page-wrapper {
+                padding: 20px;
+                justify-content: flex-start;
+                align-items: center
+            }
+
+            .card-container {
+                padding: 30px 35px;
+                margin-top: auto;
+                margin-bottom: auto
+            }
+
+            .page-icon {
+                width: 50px;
+                height: 50px;
+                margin-bottom: 12px
+            }
+
+            .page-icon svg {
+                width: 26px;
+                height: 26px
+            }
+
+            .page-title {
+                font-size: 22px;
+                margin-bottom: 8px
+            }
+
+            .page-form {
+                margin-top: 20px
+            }
+
+            .form-group {
+                margin-bottom: 16px
+            }
+
+            .footer-hint {
+                margin-top: 16px
+            }
+        }
+
+        .card-container {
+            max-width: 440px;
+            text-align: center
+        }
+
+        /* 错误消息样式 */
+        @keyframes fadeInError {
+            from {
+                opacity: 0;
+                transform: translateY(-10px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        /* 语义化警示横幅（替代整卡红色） */
+        .error-banner {
+            display: block;
+            margin-top: 6px;
+            padding: 18px 20px;
+            border-radius: 12px;
+            background: var(--banner-warn-bg);
+            border-left: 4px solid var(--banner-warn-border);
+            color: var(--banner-warn-text);
+            font-size: 14.5px;
+            font-weight: 500;
+            line-height: 1.7;
+            text-align: left;
+            animation: fadeInError 0.5s ease-out 0.5s backwards
+        }
+
+        /* 变量名代码 chip */
+        .code-chip {
+            font-family: monospace;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: var(--chip-bg);
+            color: var(--chip-text);
+            border: 1px solid var(--border-color);
+            white-space: nowrap
+        }
+
+        /* 减少动态效果偏好 */
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 毛玻璃效果遮盖层 -->
+    <div id="blur-overlay"></div>
+
+    <!-- 登录框容器 -->
+    <div class="page-wrapper">
+        <div class="card-container">
+            <button type="button" class="theme-fab" id="themeToggle" title="切换日间/夜间模式" aria-label="切换日间/夜间模式">
+                <svg class="ico-sun" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>
+                <svg class="ico-moon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+            </button>
+            <div class="page-header">
+                <div class="page-icon danger">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                    </svg>
+                </div>
+                <h1 class="page-title">未绑定 KV命名空间</h1>
+            </div>
+            <span class="error-banner">请绑定 KV 命名空间，变量名称为 <span class="code-chip">KV</span>，用于存储订阅与配置数据。</span>
+            <div class="footer-hint">
+                由 <a href="https://github.com/cmliu/edgetunnel" target="_blank" rel="noopener">edgetunnel</a> 强力驱动
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 主题初始化：与 admin 后台同源（localStorage key 'theme' + html.dark-mode 类）
+        // 首访跟随系统 prefers-color-scheme，手动切换写入 localStorage
+        (function () {
+            var stored = null;
+            try { stored = localStorage.getItem('theme'); } catch (e) { }
+            var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark-mode', dark);
+            try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch (e) { }
+            document.addEventListener('DOMContentLoaded', function () {
+                var fab = document.getElementById('themeToggle');
+                if (!fab) return;
+                fab.addEventListener('click', function () {
+                    var isDark = !document.documentElement.classList.contains('dark-mode');
+                    document.documentElement.classList.toggle('dark-mode', isDark);
+                    try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch (e) { }
+                });
+            });
+        })();
+    </script>
+</body>
+
+</html>

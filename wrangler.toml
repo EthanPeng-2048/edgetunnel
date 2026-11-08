@@ -1,0 +1,16 @@
+name = "v20251104"
+main = "src/index.ts"
+compatibility_date = "2025-11-04"
+keep_vars = true
+
+# 静态页面（login / admin / noADMIN / noKV）本地化：
+# run_worker_first = true —— 路由与认证必须先经 Worker，未命中才落静态资源。
+# 详见 DESIGN.md §7。
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+run_worker_first = true
+
+#[[kv_namespaces]]
+#binding = "KV"			#KV绑定名默认不可修改
+#id = ""				#KV数据库id
