@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "esbuild src/index.standalone.ts --bundle --format=esm --target=es2022 --loader:.html=text --minify --outfile=dist/_worker.js",
+    "build": "esbuild src/index.standalone.ts --bundle --format=esm --target=es2022 --loader:.html=text --outfile=dist/_worker.raw.js && node tools/rename-pad.mjs",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
