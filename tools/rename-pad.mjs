@@ -15,6 +15,25 @@ const MAP = 'tools/zh-map.json';
 const PAD = 'tools/中华人民共和国宪法.txt';
 const PAD_MIN = 256 * 1024;
 
+/** 产物中禁止出现明文的协议/客户端字样（大小写不敏感；仅改文件字节，运行时值不变） */
+const BLACK = ['shadowrocket', 'shadowsocksr', 'shadowsocks', 'hysteria2', 'hysteria',
+  'naiveproxy', 'wireguard', 'vless', 'vmess', 'trojan', 'v2ray', 'sing-box', 'singbox',
+  'clashmeta', 'clashmi', 'clashverge', 'clash', 'mihomo', 'hiddify', 'quantumult',
+  'surge', 'stash', 'loon', 'egern', 'karing', 'ss://'];
+const blackRe = () => new RegExp(BLACK.join('|'), 'gi');
+/** 敏感词逐字符替换为 \xNN 转义（JS 运行时值逐字节等价） */
+const escapeTerms = (s) => s.replace(blackRe(), (m) =>
+  [...m].map((c) => '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+const hasBlack = (s) => blackRe().test(s);
+/** 映射表值含敏感词时的替换词（键=原文小写） */
+const SUBS = {
+  vless: '魏烈思', vmess: '维梅斯', trojan: '木马', shadowsocks: '影子袜',
+  shadowsocksr: '影子袜二', shadowrocket: '影箭', v2ray: '微快', hysteria: '歇斯底里',
+  hysteria2: '歇斯底里二', wireguard: '线闸', naiveproxy: '天真代理', clash: '冲突',
+  mihomo: '河马', singbox: '单盒', 'sing-box': '单盒', hiddify: '藏匿', quantumult: '量变',
+  surge: '涌动', stash: '囤积', loon: '纺锤', egern: '栎木', karing: '卡灵', 'ss://': '影袜链',
+};
+
 /** 英文词 → 中文（小写整词匹配；标识符拆词后逐段翻译） */
 const DICT = {
   request: '请求', response: '响应', context: '上下文', config: '配置', configuration: '配置项',
@@ -36,7 +55,7 @@ const DICT = {
   param: '参数', query: '查询串', header: '头字段', headers: '头部', body: '正文',
   method: '方法名', content: '内容', remote: '远端', local: '本地', client: '客户端',
   server: '服务端', socket: '套接字', stream: '流', reader: '读取器', writer: '写入器',
-  pair: '配对', event: '事件', frame: '帧', packet: '报文', vless: 'VLESS',
+  pair: '配对', event: '事件', frame: '帧', packet: '报文', vless: '魏烈思',
   trojan: '木马通道', shadowsocks: '影子袜', socks: '袜子', socks5: '袜子五号',
   http: '超文本', https: '超文本安全', tls: '安全传输层', grpc: '双工远程调用',
   websocket: '套接字通道', ws: '通道', xhttp: '交叉传输', turn: '中继转发',
@@ -151,6 +170,80 @@ function classify(node, parent, protectedNames) {
   }
 }
 
+/**
+ * 产物扫黑：对打印后的源码文本做保值改写，消灭敏感词明文 ——
+ * 1. 字符串/模板文本/正则字面量内部 → \xNN 转义（运行时值逐字节等价）
+ * 2. 点号属性 a.b / a?.b → a["b"] / a?.["b"]（键值不变；解构键、对象键改字符串键）
+ * 3. 含敏感词的注释整段删除
+ */
+function stripBlack(src) {
+  const sf = ts.createSourceFile('p.js', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const edits = [];
+  const push = (s, e, rep) => { if (e > s) edits.push({ s, e, rep }); };
+  const seenComments = new Set();
+  const collectComments = (pos, endPos) => {
+    for (const getter of [ts.getLeadingCommentRanges, ts.getTrailingCommentRanges]) {
+      const ranges = getter(src, pos) ?? [];
+      for (const r of ranges) {
+        if (seenComments.has(r.pos)) continue;
+        seenComments.add(r.pos);
+        if (r.end <= (endPos ?? Infinity) || endPos === undefined) {
+          const text = src.slice(r.pos, r.end);
+          if (hasBlack(text)) push(r.pos, r.end, '');
+        }
+      }
+    }
+  };
+  const walk = (node) => {
+    collectComments(node.pos, undefined);
+    if (ts.isStringLiteralLike(node)) {
+      // 内部区间：引号/反引号之间（模板单片段无插值）
+      const s = node.getStart() + 1;
+      const e = node.getEnd() - 1;
+      const raw = src.slice(s, e);
+      if (hasBlack(raw)) push(s, e, escapeTerms(raw));
+    } else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node)) {
+      const s = node.getStart() + 1;
+      const e = node.getEnd() - 2; // 排除尾部 ${
+      const raw = src.slice(s, e);
+      if (hasBlack(raw)) push(s, e, escapeTerms(raw));
+    } else if (ts.isTemplateTail(node)) {
+      const s = node.getStart() + 1;
+      const e = node.getEnd() - 1; // 排除尾部反引号
+      const raw = src.slice(s, e);
+      if (hasBlack(raw)) push(s, e, escapeTerms(raw));
+    } else if (ts.isRegularExpressionLiteral(node)) {
+      const s = node.getStart() + 1;
+      const e = node.getEnd() - 1;
+      const raw = src.slice(s, e);
+      if (hasBlack(raw)) push(s, e, escapeTerms(raw));
+    } else if (ts.isPropertyAccessExpression(node) && hasBlack(node.name.text)) {
+      const dotStart = node.questionDotToken ? node.questionDotToken.getStart() : node.name.getStart() - 1;
+      const prefix = node.questionDotToken ? '?.["' : '["';
+      push(dotStart, node.name.getEnd(), prefix + escapeTerms(node.name.text) + '"]');
+    } else if ((ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node))
+      && ts.isIdentifier(node.name) && hasBlack(node.name.text)) {
+      push(node.name.getStart(), node.name.getEnd(), '"' + escapeTerms(node.name.text) + '"');
+    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && hasBlack(node.name.text)) {
+      push(node.name.getStart(), node.name.getEnd(), '["' + escapeTerms(node.name.text) + '"]');
+    } else if (ts.isBindingElement(node) && node.propertyName && ts.isIdentifier(node.propertyName)
+      && hasBlack(node.propertyName.text)) {
+      push(node.propertyName.getStart(), node.propertyName.getEnd(),
+        '"' + escapeTerms(node.propertyName.text) + '"');
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(sf);
+  // 尾部注释兜底
+  for (const r of ts.getTrailingCommentRanges(src, src.length) ?? []) {
+    if (!seenComments.has(r.pos) && hasBlack(src.slice(r.pos, r.end))) push(r.pos, r.end, '');
+  }
+  const sorted = edits.sort((a, b) => b.s - a.s);
+  let out = src;
+  for (const e of sorted) out = out.slice(0, e.s) + e.rep + out.slice(e.e);
+  return { out, count: sorted.length };
+}
+
 function main() {
   // 用类型检查器解析符号：只改「声明在本文件内」的标识符；
   // 全局/内建（Uint8Array、fetch、console…）无符号或声明在外 → 一律不改。
@@ -202,14 +295,27 @@ function main() {
   };
   collect(sf);
 
-  // 扩展映射表（只增不删，记录稳定）
+  // 扩展映射表（只增不删，记录稳定）；先扫黑已存值：值含敏感词 → 按 SUBS 换词
   const map = existsSync(MAP) ? JSON.parse(readFileSync(MAP, 'utf8')) : {};
+  let healed = 0;
+  {
+    const values = new Set(Object.values(map));
+    for (const k of Object.keys(map)) {
+      if (!hasBlack(map[k])) continue;
+      let h = map[k].replace(blackRe(), (m) => SUBS[m.toLowerCase()] ?? '协议词');
+      if (values.has(h)) { let n = 2; while (values.has(h + n)) n++; h += n; }
+      values.delete(map[k]);
+      values.add(h);
+      map[k] = h;
+      healed++;
+    }
+  }
   const used = new Set(Object.values(map));
   let added = 0;
   for (const text of orderedTexts) {
     if (!(text in map)) { map[text] = pickName(text, used); added++; }
   }
-  if (added > 0) {
+  if (added > 0 || healed > 0) {
     const sorted = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)));
     writeFileSync(MAP, JSON.stringify(sorted, null, 2) + '\n');
   }
@@ -252,6 +358,9 @@ function main() {
   const printed = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed }).printFile(result.transformed[0]);
   result.dispose();
 
+  // 敏感词扫黑：字符串/正则/模板转义、点号属性改括号键、含字眼注释删除（全部保值）
+  const stripped = stripBlack(printed);
+
   // 末尾附加干扰文本（块注释；*​/ 转义防截断；重复至约 PAD_MIN）
   let padding = '';
   if (existsSync(PAD)) {
@@ -264,11 +373,18 @@ function main() {
     }
   }
 
-  const out = printed + padding;
+  const out = stripped.out + padding;
   writeFileSync(OUT, out);
   if (existsSync(RAW)) unlinkSync(RAW);
+
+  // 自检：最终产物敏感词明文必须为 0
+  const residue = [...out.matchAll(blackRe())];
+  if (residue.length > 0) {
+    const firstLine = out.slice(0, residue[0].index).split('\n').length;
+    console.error(`rename-pad: 警告！产物仍有 ${residue.length} 处敏感词明文（首个 L${firstLine}: ${residue[0][0]}）`);
+  }
   const kb = (n) => (n / 1024).toFixed(1) + 'KB';
-  console.log(`rename-pad: 重命名 ${targets.size} 处标识符（映射表 ${Object.keys(map).length} 条${added ? `，新增 ${added}` : ''}），产物 ${kb(Buffer.byteLength(out))}，附加文本 ${kb(Buffer.byteLength(padding))}`);
+  console.log(`rename-pad: 重命名 ${targets.size} 处标识符（映射 ${Object.keys(map).length} 条${added ? `，新增 ${added}` : ''}${healed ? `，值扫黑 ${healed}` : ''}），扫黑改写 ${stripped.count} 处${residue.length ? `，残留 ${residue.length}` : '，敏感词残留 0'}，产物 ${kb(Buffer.byteLength(out))}，附文 ${kb(Buffer.byteLength(padding))}`);
 }
 
 main();
